@@ -57,8 +57,8 @@ class MyWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Chat App',
-      // home: ChatsPage(),
-      home: MessagesPage('user1'),
+      home: ChatsPage(),
+      // home: MessagesPage('user1'),
       routes: {
         '/chats': (context) => ChatsPage(),
         '/profile': (context) => ProfilePage(),
