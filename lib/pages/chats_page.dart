@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:chat_p2p/pages/messages_page.dart';
+import 'messages_page.dart'; // Импортируем ваш MessagesPage
 
 class ChatsPage extends StatefulWidget {
   @override
@@ -9,47 +9,46 @@ class ChatsPage extends StatefulWidget {
 }
 
 class _ChatsPageState extends State<ChatsPage> {
-  List<String> chatUsers = [];
-  bool isLoading = true;
+  List<ChatUser> chatUsers = [];
+  bool _isLoading = false;
+  final String currentUser = 'current_user'; // Замените на реального пользователя
 
   @override
   void initState() {
     super.initState();
-    fetchChatUsers();
+    _loadChats();
   }
 
-  Future<void> fetchChatUsers() async {
+  Future<void> _loadChats() async {
+    if (!mounted) return;
+    
+    setState(() => _isLoading = true);
+    
     try {
-      // In a real app, you would replace 'current_user' with the actual logged-in user
       final response = await http.get(
-        Uri.parse('http://your-server-ip:5000/api/messages?username=current_user'),
-      );
+        Uri.parse('http://localhost:5000/api/chats?username=$currentUser'),
+      ).timeout(Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        // Extract unique users from messages
-        // Note: This is a simplified approach - in a real app you'd have a proper user list endpoint
-        final messages = data['messages'] as List;
-        final users = messages.map((msg) => msg['username'] as String).toSet().toList();
-        
-        setState(() {
-          chatUsers = users;
-          isLoading = false;
-        });
-      } else {
-        // If the server returns an error response, use default users
-        setState(() {
-          chatUsers = ['user1', 'user2', 'user3'];
-          isLoading = false;
-        });
+        final data = jsonDecode(response.body);
+        if (data['status'] == 'success') {
+          setState(() {
+            chatUsers = (data['chats'] as List).map((chat) => ChatUser(
+              username: chat['partner'],
+              lastMessage: chat['last_message'],
+              timestamp: chat['timestamp'],
+              unreadCount: chat['unread_count'] ?? 0,
+            )).toList();
+          });
+        }
       }
     } catch (e) {
-      // If there's an error (like no internet), use default users
-      print('Error fetching users: $e');
-      setState(() {
-        chatUsers = ['user1', 'user2', 'user3'];
-        isLoading = false;
-      });
+      debugPrint('Ошибка загрузки чатов: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка загрузки чатов')),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -57,88 +56,97 @@ class _ChatsPageState extends State<ChatsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Чаты',
-          style: TextStyle(
-            color: Colors.white,
+        title: Text('Мои чаты'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: _loadChats,
           ),
-        ),
-        foregroundColor: Colors.white,
-        backgroundColor: Colors.blue,
+        ],
       ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: <Widget>[
-            DrawerHeader(
-              decoration: BoxDecoration(
-                color: Colors.blue,
-              ),
-              child: InkWell(
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.pushNamed(context, '/profile');
-                },
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircleAvatar(
-                      radius: 30,
-                      backgroundImage: NetworkImage(
-                          'https://example.com/profile.jpg'),
-                      child: Icon(Icons.person, size: 30, color: Colors.white),
-                    ),
-                    SizedBox(height: 10),
-                    Text(
-                      'Мой профиль',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            ListTile(
-              leading: Icon(Icons.chat),
-              title: Text('Чаты'),
-              onTap: () {
-                Navigator.pop(context);
-              },
-              tileColor: const Color.fromARGB(50, 33, 149, 243),
-            ),
-            ListTile(
-              leading: Icon(Icons.settings),
-              title: Text('Настройки'),
-              onTap: () {
-                Navigator.pop(context);
-              },
-            ),
-          ],
-        ),
-      ),
-      body: isLoading
+      body: _isLoading
           ? Center(child: CircularProgressIndicator())
-          : ListView.builder(
-              itemCount: chatUsers.length,
-              itemBuilder: (context, index) {
-                return Card(
-                  margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: ListTile(
-                    title: Text(chatUsers[index]),
-                    trailing: Icon(Icons.arrow_forward),
-                    onTap: () {
-                      Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => MessagesPage(chatUsers[index]),
-                          ),
-                      );
-                    },
-                  ),
-                );
-              },
-            ),
+          : chatUsers.isEmpty
+              ? Center(child: Text('Нет активных чатов'))
+              : ListView.builder(
+                  itemCount: chatUsers.length,
+                  itemBuilder: (context, index) => _buildChatItem(chatUsers[index]),
+                ),
     );
   }
+
+  Widget _buildChatItem(ChatUser user) {
+    return Card(
+      margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: ListTile(
+        leading: CircleAvatar(
+          child: Text(user.username[0].toUpperCase()),
+        ),
+        title: Text(user.username),
+        subtitle: Text(
+          user.lastMessage ?? '',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              _formatTime(user.timestamp),
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            if (user.unreadCount > 0)
+              Container(
+                padding: EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  user.unreadCount.toString(),
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ),
+          ],
+        ),
+        onTap: () => _openChat(context, user),
+      ),
+    );
+  }
+
+  void _openChat(BuildContext context, ChatUser user) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MessagesPage(
+          user.username,
+          recipient: user.username, // Передаем получателя
+        ),
+      ),
+    ).then((_) => _loadChats()); // Обновляем список при возвращении
+  }
+
+  String _formatTime(String? timestamp) {
+    if (timestamp == null) return '';
+    try {
+      final date = DateTime.parse(timestamp);
+      return '${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+    } catch (e) {
+      return '';
+    }
+  }
+}
+
+class ChatUser {
+  final String username;
+  final String? lastMessage;
+  final String? timestamp;
+  final int unreadCount;
+
+  ChatUser({
+    required this.username,
+    this.lastMessage,
+    this.timestamp,
+    this.unreadCount = 0,
+  });
 }

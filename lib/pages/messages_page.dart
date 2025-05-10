@@ -6,7 +6,7 @@ import 'package:intl/intl.dart';
 
 class MessagesPage extends StatefulWidget {
   final String username;
-  const MessagesPage(this.username, {Key? key}) : super(key: key);
+  const MessagesPage(this.username, {Key? key, required String recipient}) : super(key: key);
 
   @override
   _MessagesPageState createState() => _MessagesPageState();
